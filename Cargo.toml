@@ -29,6 +29,7 @@ mint = "0.5.9"
 
 [dev-dependencies]
 quickcheck = { version = "1.0", default-features = false }
+criterion = "=0.5.1"
 
 [features]
 default = []
@@ -44,3 +45,7 @@ members = ["cgt_cli", "cgt_py", "cgt_derive", "cgt_gui"]
 [profile.release]
 lto = true
 panic = "abort"
+
+[[bench]]
+name = "canonical"
+harness = false
