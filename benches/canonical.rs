@@ -10,6 +10,8 @@ use cgt::{
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
+mod perf;
+
 fn make_canonical(c: &mut Criterion) {
     c.bench_function("Moves::canonical_form(), 4/4 nus", |b| {
         let dy = |n: i64, d: u32| DyadicRationalNumber::new(n, d);
@@ -66,5 +68,9 @@ fn domineering(c: &mut Criterion) {
         .sample_size(10);
 }
 
-criterion_group!(canonicalize, make_canonical, domineering);
+criterion_group!(
+    name = canonicalize;
+    config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
+    targets = domineering
+);
 criterion_main!(canonicalize);

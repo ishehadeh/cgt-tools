@@ -30,6 +30,7 @@ mint = "0.5.9"
 [dev-dependencies]
 quickcheck = { version = "1.0", default-features = false }
 criterion = "=0.5.1"
+pprof = { version = "0.3", features = ["flamegraph"] }
 
 [features]
 default = []
