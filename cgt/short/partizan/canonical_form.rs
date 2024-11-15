@@ -533,6 +533,37 @@ impl Moves {
         Some(result)
     }
 
+    fn eliminate_dominated_moves_mut<const IS_LEFT: bool>(&mut self) {
+        let moves = if IS_LEFT {
+            &mut self.left
+        } else {
+            &mut self.right
+        };
+
+        let mut i = 0;
+
+        'iter: while i < moves.len() {
+            for j in 0..i {
+                if let Some(cmp) = moves[i].partial_cmp(&moves[j]) {
+                    // dominated or dupicate
+                    if cmp == Ordering::Equal
+                        || (IS_LEFT && cmp == Ordering::Less)
+                        || (!IS_LEFT && cmp == Ordering::Greater)
+                    {
+                        moves.swap_remove(i);
+                        continue 'iter;
+                    }
+
+                    // dominates existing move in set
+                    moves.swap(i, j);
+                    moves.swap_remove(i);
+                    continue 'iter;
+                }
+            }
+            i += 1;
+        }
+    }
+
     // TODO: Rewrite it to work on mutable vec and not clone
     fn eliminate_dominated_moves(
         moves: &[CanonicalForm],
@@ -710,12 +741,11 @@ impl Moves {
 
     fn canonicalize(&self) -> Self {
         let moves = self.bypass_reversible_moves_l();
-        let moves = moves.bypass_reversible_moves_r();
+        let mut moves = moves.bypass_reversible_moves_r();
 
-        let left = Self::eliminate_dominated_moves(&moves.left, true);
-        let right = Self::eliminate_dominated_moves(&moves.right, false);
-
-        Self { left, right }
+        moves.eliminate_dominated_moves_mut::<false>();
+        moves.eliminate_dominated_moves_mut::<true>();
+        moves
     }
 
     fn thermograph(&self) -> Thermograph {
