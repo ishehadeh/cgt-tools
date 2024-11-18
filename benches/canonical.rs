@@ -1,9 +1,11 @@
+use std::str::FromStr;
+
 use cgt::{
-    grid::small_bit_grid::SmallBitGrid,
+    grid::{small_bit_grid::SmallBitGrid, vec_grid::VecGrid},
     numeric::{dyadic_rational_number::DyadicRationalNumber, nimber::Nimber},
     short::partizan::{
         canonical_form::{CanonicalForm, Moves, Nus},
-        games::domineering::Domineering,
+        games::{amazons::Amazons, domineering::Domineering},
         partizan_game::PartizanGame,
         transposition_table::NoTranspositionTable,
     },
@@ -13,7 +15,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 mod perf;
 
 fn make_canonical(c: &mut Criterion) {
-    c.bench_function("Moves::canonical_form(), 4/4 nus", |b| {
+    c.bench_function("Moves::canonical_form()", |b| {
         let dy = |n: i64, d: u32| DyadicRationalNumber::new(n, d);
         let star = |n: u32| Nimber::new(n);
 
@@ -40,7 +42,7 @@ fn make_canonical(c: &mut Criterion) {
 
 fn domineering(c: &mut Criterion) {
     c.bench_function(
-        "PartizanGame::canonical_form(), NoTranspositionTable, domineering_3x3",
+        "PartizanGame::canonical_form(), NoTranspositionTable, Domineering 3x3",
         |b| {
             let board = Domineering::new(SmallBitGrid::empty(3, 3).unwrap());
             let tt = NoTranspositionTable::new();
@@ -50,27 +52,25 @@ fn domineering(c: &mut Criterion) {
             });
         },
     );
+}
 
-    let mut group = c.benchmark_group("long-running");
-    group.sample_size(10);
-    group
-        .bench_function(
-            "PartizanGame::canonical_form(), NoTranspositionTable, domineering_5x5",
-            |b| {
-                let board = Domineering::new(SmallBitGrid::empty(4, 4).unwrap());
-                let tt = NoTranspositionTable::new();
-                b.iter(|| {
-                    let canon = board.clone().canonical_form(&tt);
-                    black_box(canon);
-                });
-            },
-        )
-        .sample_size(10);
+fn amazons(c: &mut Criterion) {
+    c.bench_function(
+        "PartizanGame::canonical_form(), NoTranspositionTable, Amazons 3x2",
+        |b| {
+            let board: Amazons<VecGrid<_>> = Amazons::from_str("x..|..o").unwrap();
+            let tt = NoTranspositionTable::new();
+            b.iter(|| {
+                let canon = board.clone().canonical_form(&tt);
+                black_box(canon);
+            });
+        },
+    );
 }
 
 criterion_group!(
     name = canonicalize;
     config = Criterion::default().with_profiler(perf::FlamegraphProfiler::new(100));
-    targets = domineering
+    targets = domineering, amazons, make_canonical
 );
 criterion_main!(canonicalize);
