@@ -564,50 +564,14 @@ impl Moves {
         }
     }
 
-    // TODO: Rewrite it to work on mutable vec and not clone
-    fn eliminate_dominated_moves(
-        moves: &[CanonicalForm],
-        eliminate_smaller_moves: bool,
-    ) -> Vec<CanonicalForm> {
-        let mut moves: Vec<Option<CanonicalForm>> = moves.iter().cloned().map(Some).collect();
-
-        'outer: for i in 0..moves.len() {
-            'inner: for j in 0..i {
-                let Some(move_i) = &moves[i] else {
-                    continue 'outer;
-                };
-                let Some(move_j) = &moves[j] else {
-                    continue 'inner;
-                };
-
-                // Split from ifs because borrow checker is sad
-                let remove_i = (eliminate_smaller_moves && move_i <= move_j)
-                    || (!eliminate_smaller_moves && move_j <= move_i);
-
-                let remove_j = (eliminate_smaller_moves && move_j <= move_i)
-                    || (!eliminate_smaller_moves && move_i <= move_j);
-
-                if remove_i {
-                    moves[i] = None;
-                }
-
-                if remove_j {
-                    moves[j] = None;
-                }
-            }
-        }
-
-        moves.iter().flatten().cloned().collect()
-    }
-
     /// Return false if `H <= GL` for some left option `GL` of `G` or `HR <= G` for some right
     /// option `HR` of `H`. Otherwise return true.
     fn leq_arrays(
         game: &CanonicalForm,
-        left_moves: &[Option<CanonicalForm>],
-        right_moves: &[Option<CanonicalForm>],
+        left_moves: &[CanonicalForm],
+        right_moves: &[CanonicalForm],
     ) -> bool {
-        for r_opt in right_moves.iter().flatten() {
+        for r_opt in right_moves {
             if r_opt <= game {
                 return false;
             }
@@ -623,56 +587,12 @@ impl Moves {
         true
     }
 
-    /// Return false if `H <= GL` for some left option `GL` of `G` or `HR <= G` for some right
-    /// option `HR` of `H`. Otherwise return true.
-    fn leq_arrays_new(
-        game: &CanonicalForm,
-        left_moves: &[CanonicalForm],
-        right_moves: &[CanonicalForm],
-    ) -> bool {
-        for r_opt in right_moves {
-            if r_opt <= game {
-                return false;
-            }
-        }
-
-        let game_moves = game.to_moves();
-        for l_move in &game_moves.left {
-            if Self::geq_arrays_new(l_move, left_moves, right_moves) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn geq_arrays_new(
+    fn geq_arrays(
         game: &CanonicalForm,
         left_moves: &[CanonicalForm],
         right_moves: &[CanonicalForm],
     ) -> bool {
         for l_opt in left_moves {
-            if game <= l_opt {
-                return false;
-            }
-        }
-
-        let game_moves = game.to_moves();
-        for r_move in &game_moves.right {
-            if Self::leq_arrays_new(r_move, left_moves, right_moves) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn geq_arrays(
-        game: &CanonicalForm,
-        left_moves: &[Option<CanonicalForm>],
-        right_moves: &[Option<CanonicalForm>],
-    ) -> bool {
-        for l_opt in left_moves.iter().flatten() {
             if game <= l_opt {
                 return false;
             }
@@ -698,7 +618,7 @@ impl Moves {
 
             // try to find some I ∈ Hᴸ such that I ≥ G
             for g_rl_move in g_r_move.to_moves().left {
-                if Self::geq_arrays_new(&g_rl_move, &self.left, &self.right) {
+                if Self::geq_arrays(&g_rl_move, &self.left, &self.right) {
                     // replace H with right options of I
                     let g_rlr = g_rl_move.to_moves().right;
                     for g_rlr_move in g_rlr {
@@ -728,7 +648,7 @@ impl Moves {
 
             // try to find some I ∈ Hᴿ such that I ≤ G
             for g_lr_move in g_l_move.to_moves().right {
-                if Self::leq_arrays_new(&g_lr_move, &self.left, &self.right) {
+                if Self::leq_arrays(&g_lr_move, &self.left, &self.right) {
                     // since I ≤ G,  if left moves to H, right can immediately move to I, placing left at least as bad a position as they started.
                     // For a proof of this, see:
                     //  - https://www.math.kth.se/matstat/gru/sf2972/2015/gametheory.pdf
@@ -750,101 +670,7 @@ impl Moves {
         }
     }
 
-    fn bypass_reversible_moves_l(&self) -> Self {
-        let mut i: i64 = 0;
-
-        let mut left_moves: Vec<Option<CanonicalForm>> =
-            self.left.iter().cloned().map(Some).collect();
-        let right_moves: Vec<Option<CanonicalForm>> =
-            self.right.iter().cloned().map(Some).collect();
-
-        loop {
-            if (i as usize) >= left_moves.len() {
-                break;
-            }
-            let g_l = match &left_moves[i as usize] {
-                None => {
-                    i += 1;
-                    continue;
-                }
-                Some(g) => g.clone(),
-            };
-            for g_lr in g_l.to_moves().right {
-                if Self::leq_arrays(&g_lr, &left_moves, &right_moves) {
-                    let g_lr_moves = g_lr.to_moves();
-                    let mut new_left_moves: Vec<Option<CanonicalForm>> =
-                        vec![None; left_moves.len() + g_lr_moves.left.len() - 1];
-                    new_left_moves[..(i as usize)].clone_from_slice(&left_moves[..(i as usize)]);
-                    new_left_moves[(i as usize)..(left_moves.len() - 1)]
-                        .clone_from_slice(&left_moves[(i as usize + 1)..]);
-                    for (k, g_lrl) in g_lr_moves.left.iter().enumerate() {
-                        if left_moves.contains(&Some(g_lrl.clone())) {
-                            new_left_moves[left_moves.len() + k - 1] = None;
-                        } else {
-                            new_left_moves[left_moves.len() + k - 1] = Some(g_lrl.clone());
-                        }
-                    }
-                    left_moves = new_left_moves;
-                    i -= 1;
-                    break;
-                }
-            }
-
-            i += 1;
-        }
-        Self {
-            left: left_moves.iter().flatten().cloned().collect(),
-            right: self.right.clone(),
-        }
-    }
-
-    fn bypass_reversible_moves_r(&self) -> Self {
-        let mut i: i64 = 0;
-
-        let left_moves: Vec<Option<CanonicalForm>> = self.left.iter().cloned().map(Some).collect();
-        let mut right_moves: Vec<Option<CanonicalForm>> =
-            self.right.iter().cloned().map(Some).collect();
-
-        loop {
-            if (i as usize) >= right_moves.len() {
-                break;
-            }
-            let g_r = match &right_moves[i as usize] {
-                None => {
-                    i += 1;
-                    continue;
-                }
-                Some(game) => game.clone(),
-            };
-            for g_rl in g_r.to_moves().left {
-                if Self::geq_arrays(&g_rl, &left_moves, &right_moves) {
-                    let g_rl_moves = g_rl.to_moves();
-                    let mut new_right_moves: Vec<Option<CanonicalForm>> =
-                        vec![None; right_moves.len() + g_rl_moves.right.len() - 1];
-                    new_right_moves[..(i as usize)].clone_from_slice(&right_moves[..(i as usize)]);
-                    new_right_moves[(i as usize)..(right_moves.len() - 1)]
-                        .clone_from_slice(&right_moves[(i as usize + 1)..]);
-                    for (k, g_rlr) in g_rl_moves.right.iter().enumerate() {
-                        if right_moves.contains(&Some(g_rlr.clone())) {
-                            new_right_moves[right_moves.len() + k - 1] = None;
-                        } else {
-                            new_right_moves[right_moves.len() + k - 1] = Some(g_rlr.clone());
-                        }
-                    }
-                    right_moves = new_right_moves;
-                    i -= 1;
-                    break;
-                }
-            }
-
-            i += 1;
-        }
-        Self {
-            left: self.left.clone(),
-            right: right_moves.iter().flatten().cloned().collect(),
-        }
-    }
-
+    #[allow(dead_code, reason = "used in tests")]
     fn canonicalize(&self) -> Self {
         let mut moves = self.clone();
         moves.canonicalize_mut();
