@@ -623,6 +623,50 @@ impl Moves {
         true
     }
 
+    /// Return false if `H <= GL` for some left option `GL` of `G` or `HR <= G` for some right
+    /// option `HR` of `H`. Otherwise return true.
+    fn leq_arrays_new(
+        game: &CanonicalForm,
+        left_moves: &[CanonicalForm],
+        right_moves: &[CanonicalForm],
+    ) -> bool {
+        for r_opt in right_moves {
+            if r_opt <= game {
+                return false;
+            }
+        }
+
+        let game_moves = game.to_moves();
+        for l_move in &game_moves.left {
+            if Self::geq_arrays_new(l_move, left_moves, right_moves) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn geq_arrays_new(
+        game: &CanonicalForm,
+        left_moves: &[CanonicalForm],
+        right_moves: &[CanonicalForm],
+    ) -> bool {
+        for l_opt in left_moves {
+            if game <= l_opt {
+                return false;
+            }
+        }
+
+        let game_moves = game.to_moves();
+        for r_move in &game_moves.right {
+            if Self::leq_arrays_new(r_move, left_moves, right_moves) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     fn geq_arrays(
         game: &CanonicalForm,
         left_moves: &[Option<CanonicalForm>],
@@ -642,6 +686,68 @@ impl Moves {
         }
 
         true
+    }
+
+    fn bypass_reversible_moves_r_mut(&mut self) {
+        let mut i = 0;
+        // iterate over all moves H ∈ Gᴿ
+        // ATTENTION! We're going to change the list while iterating
+        while i < self.right.len() {
+            let g_r_move = &self.right[i];
+            let mut is_reversible = false;
+
+            // try to find some I ∈ Hᴸ such that I ≥ G
+            for g_rl_move in g_r_move.to_moves().left {
+                if Self::geq_arrays_new(&g_rl_move, &self.left, &self.right) {
+                    // replace H with right options of I
+                    let g_rlr = g_rl_move.to_moves().right;
+                    for g_rlr_move in g_rlr {
+                        if !self.right.contains(&g_rlr_move) {
+                            self.right.push(g_rlr_move);
+                        }
+                    }
+                    self.right.swap_remove(i);
+                    is_reversible = true;
+                    break;
+                }
+            }
+
+            if !is_reversible {
+                i += 1;
+            };
+        }
+    }
+
+    fn bypass_reversible_moves_l_mut(&mut self) {
+        let mut i = 0;
+        // iterate over all moves H ∈ Gᴸ
+        // ATTENTION! We're going to change the list while iterating
+        while i < self.left.len() {
+            let g_l_move = &self.left[i];
+            let mut is_reversible = false;
+
+            // try to find some I ∈ Hᴿ such that I ≤ G
+            for g_lr_move in g_l_move.to_moves().right {
+                if Self::leq_arrays_new(&g_lr_move, &self.left, &self.right) {
+                    // since I ≤ G,  if left moves to H, right can immediately move to I, placing left at least as bad a position as they started.
+                    // For a proof of this, see:
+                    //  - https://www.math.kth.se/matstat/gru/sf2972/2015/gametheory.pdf
+                    let g_lrl = g_lr_move.to_moves().left;
+                    for g_lrl_move in g_lrl {
+                        if !self.left.contains(&g_lrl_move) {
+                            self.left.push(g_lrl_move);
+                        }
+                    }
+                    self.left.swap_remove(i);
+                    is_reversible = true;
+                    break;
+                }
+            }
+
+            if !is_reversible {
+                i += 1;
+            };
+        }
     }
 
     fn bypass_reversible_moves_l(&self) -> Self {
@@ -740,12 +846,17 @@ impl Moves {
     }
 
     fn canonicalize(&self) -> Self {
-        let moves = self.bypass_reversible_moves_l();
-        let mut moves = moves.bypass_reversible_moves_r();
-
-        moves.eliminate_dominated_moves_mut::<false>();
-        moves.eliminate_dominated_moves_mut::<true>();
+        let mut moves = self.clone();
+        moves.canonicalize_mut();
         moves
+    }
+
+    fn canonicalize_mut(&mut self) {
+        self.bypass_reversible_moves_r_mut();
+        self.bypass_reversible_moves_l_mut();
+
+        self.eliminate_dominated_moves_mut::<false>();
+        self.eliminate_dominated_moves_mut::<true>();
     }
 
     fn thermograph(&self) -> Thermograph {
@@ -959,7 +1070,7 @@ impl CanonicalForm {
     /// Safe function to construct a game from possible moves
     pub fn new_from_moves(mut moves: Moves) -> Self {
         moves.eliminate_duplicates();
-        moves = moves.canonicalize();
+        moves.canonicalize_mut();
 
         Self::construct_from_canonical_moves(moves)
     }
